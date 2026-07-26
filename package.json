@@ -17,6 +17,8 @@
     "verify": "npm run type-check && npm run lint && npm run test && npm run build"
   },
   "dependencies": {
+    "@emnapi/core": "^1.11.3",
+    "@emnapi/runtime": "^1.11.3",
     "@supabase/supabase-js": "^2.110.8",
     "next": "^16.2.12",
     "react": "^19.2.8",
