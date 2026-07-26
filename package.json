@@ -14,6 +14,8 @@
     "smoke": "tsx scripts/smoke-live.ts",
     "doctor": "tsx scripts/doctor.ts",
     "seed": "tsx scripts/seed.ts",
+    "db:dry-run": "tsx scripts/push-migrations.ts --dry-run",
+    "db:push": "tsx scripts/push-migrations.ts",
     "verify": "npm run type-check && npm run lint && npm run test && npm run build"
   },
   "dependencies": {

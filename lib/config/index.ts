@@ -112,6 +112,17 @@ export const config = Object.freeze({
     snapshotPath: str("ZUBAAN_STORE_PATH") ?? ".data/store.json",
   }),
 
+  workspace: Object.freeze({
+    /**
+     * Auth remains outside the hackathon path, so each deployment is scoped to
+     * one explicit organization. Replace this with the authenticated
+     * membership organization when auth is enabled.
+     */
+    organizationId:
+      str("ZUBAAN_ORGANIZATION_ID") ??
+      "00000000-0000-0000-0000-000000000001",
+  }),
+
   pipeline: Object.freeze({
     /** Buffer finalized utterances into windows — the batching that keeps
      *  us under 40 req/min. Mandatory: never call the model per utterance. */
@@ -156,7 +167,7 @@ export function capabilities(): Capability[] {
       name: "transcription",
       status: live ? "live" : "degraded",
       detail: live
-        ? `${s.models.stt} streaming, codemix, auto-detect`
+        ? `${s.models.stt} via server relay, codemix, auto-detect`
         : "mock: scripted transcript replay",
     },
     {

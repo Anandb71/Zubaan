@@ -14,6 +14,7 @@
  */
 
 import { backoffDelay } from "@/lib/resilience/backoff";
+import { parseSttMessage } from "@/lib/sarvam/stt-events";
 import type { SttEvent, SttStreamOptions } from "./types";
 import type { SttSession } from "./stt";
 
@@ -162,65 +163,7 @@ export class SttStream implements LiveSttStream {
   }
 
   private handleMessage(data: unknown): void {
-    if (typeof data !== "string") return;
-
-    let msg: Record<string, unknown>;
-    try {
-      const parsed: unknown = JSON.parse(data);
-      if (!parsed || typeof parsed !== "object") return;
-      msg = parsed as Record<string, unknown>;
-    } catch {
-      return;
-    }
-
-    const type = pickStr(msg, "type");
-    const payload =
-      msg.data && typeof msg.data === "object" && !Array.isArray(msg.data)
-        ? (msg.data as Record<string, unknown>)
-        : msg;
-
-    if (type === "error") {
-      const message =
-        pickStr(payload, "error") ??
-        pickStr(payload, "message") ??
-        "STT error";
-      this.cfg.onEvent({ type: "error", message, retriable: true });
-      return;
-    }
-
-    if (type === "events") {
-      const signal = pickStr(payload, "signal_type");
-      if (signal === "START_SPEECH") this.cfg.onEvent({ type: "vad", speaking: true });
-      if (signal === "END_SPEECH") this.cfg.onEvent({ type: "vad", speaking: false });
-      return;
-    }
-
-    const lang =
-      pickStr(payload, "language_code") ??
-      pickStr(payload, "detected_language") ??
-      pickStr(payload, "language");
-    if (lang) this.cfg.onEvent({ type: "language", code: lang });
-
-    const text = pickStr(payload, "transcript") ?? pickStr(payload, "text");
-    if (text === undefined) return;
-
-    // Saaras v3 streaming emits finals on type=data; treat unknown as final.
-    const isFinal =
-      type === "data" ||
-      toBool(firstOf(payload, ["is_final", "final"])) ||
-      pickStr(payload, "event") === "final";
-
-    this.cfg.onEvent(
-      isFinal
-        ? {
-            type: "final",
-            text,
-            language: lang,
-            startMs: toNum(firstOf(payload, ["start_time_ms", "start_ms", "start"])),
-            endMs: toNum(firstOf(payload, ["end_time_ms", "end_ms", "end"])),
-          }
-        : { type: "partial", text, language: lang },
-    );
+    for (const event of parseSttMessage(data)) this.cfg.onEvent(event);
   }
 }
 
@@ -272,21 +215,205 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-function pickStr(msg: Record<string, unknown>, key: string): string | undefined {
-  const v = msg[key];
-  return typeof v === "string" && v.length > 0 ? v : undefined;
+export interface RelaySttClientConfig {
+  onEvent: (event: SttEvent) => void;
+  endpoint?: string;
+  maxBufferedFrames?: number;
+  uploadIntervalMs?: number;
 }
-function firstOf(msg: Record<string, unknown>, keys: string[]): unknown {
-  for (const k of keys) if (msg[k] !== undefined) return msg[k];
-  return undefined;
+
+interface RelayHandle {
+  id: string;
+  token: string;
+  expiresAt: number;
 }
-function toBool(v: unknown): boolean {
-  return v === true || v === "true" || v === 1;
+
+interface RelayPollResponse {
+  events?: { sequence: number; event: SttEvent }[];
+  state?: "connecting" | "open" | "closed" | "error";
+  nextSequence?: number;
 }
-function toNum(v: unknown): number | undefined {
-  if (v === undefined || v === null) return undefined;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : undefined;
+
+/**
+ * Same-origin STT client. Audio goes to Zubaan's relay; the Sarvam API key
+ * never enters the browser, URLs, logs, or reconnect state.
+ */
+export class RelaySttStream implements LiveSttStream {
+  private readonly endpoint: string;
+  private readonly maxBuffered: number;
+  private readonly uploadIntervalMs: number;
+  private handle: RelayHandle | null = null;
+  private frames: Uint8Array[] = [];
+  private uploadTimer: ReturnType<typeof setTimeout> | null = null;
+  private writeChain: Promise<void> = Promise.resolve();
+  private closedByUser = false;
+  private lastSequence = 0;
+
+  constructor(private readonly cfg: RelaySttClientConfig) {
+    this.endpoint = cfg.endpoint ?? "/api/stt/relay";
+    this.maxBuffered = cfg.maxBufferedFrames ?? 120;
+    this.uploadIntervalMs = cfg.uploadIntervalMs ?? 240;
+  }
+
+  async start(): Promise<void> {
+    this.closedByUser = false;
+    this.lastSequence = 0;
+    const response = await fetch(this.endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const payload = (await response.json()) as {
+      session?: RelayHandle;
+      error?: { message?: string };
+    };
+    if (!response.ok || !payload.session) {
+      throw new Error(payload.error?.message ?? "Could not start secure STT relay");
+    }
+    this.handle = payload.session;
+    void this.poll();
+  }
+
+  sendAudio(pcm: ArrayBuffer): void {
+    if (this.closedByUser) return;
+    this.frames.push(new Uint8Array(pcm.slice(0)));
+    while (this.frames.length > this.maxBuffered) this.frames.shift();
+    if (!this.uploadTimer) {
+      this.uploadTimer = setTimeout(() => {
+        this.uploadTimer = null;
+        this.flushAudio();
+      }, this.uploadIntervalMs);
+    }
+  }
+
+  async finish(): Promise<void> {
+    if (this.uploadTimer) {
+      clearTimeout(this.uploadTimer);
+      this.uploadTimer = null;
+    }
+    this.flushAudio();
+    await this.writeChain;
+    const handle = this.handle;
+    if (handle) {
+      await fetch(`${this.endpoint}/${encodeURIComponent(handle.id)}`, {
+        method: "PATCH",
+        headers: this.headers(handle),
+      }).catch(() => undefined);
+      await delay(800);
+    }
+    this.close();
+  }
+
+  close(): void {
+    if (this.closedByUser) return;
+    this.closedByUser = true;
+    if (this.uploadTimer) clearTimeout(this.uploadTimer);
+    this.uploadTimer = null;
+    this.frames = [];
+    const handle = this.handle;
+    this.handle = null;
+    if (handle) {
+      void fetch(`${this.endpoint}/${encodeURIComponent(handle.id)}`, {
+        method: "DELETE",
+        headers: this.headers(handle),
+        keepalive: true,
+      }).catch(() => undefined);
+    }
+  }
+
+  private flushAudio(): void {
+    const handle = this.handle;
+    if (!handle || this.frames.length === 0 || this.closedByUser) return;
+    const frames = this.frames.splice(0, this.frames.length);
+    const length = frames.reduce((total, frame) => total + frame.byteLength, 0);
+    const bytes = new Uint8Array(length);
+    let offset = 0;
+    for (const frame of frames) {
+      bytes.set(frame, offset);
+      offset += frame.byteLength;
+    }
+
+    this.writeChain = this.writeChain
+      .then(async () => {
+        if (this.closedByUser) return;
+        const response = await fetch(
+          `${this.endpoint}/${encodeURIComponent(handle.id)}/audio`,
+          {
+            method: "POST",
+            headers: {
+              ...this.headers(handle),
+              "Content-Type": "application/octet-stream",
+            },
+            body: bytes,
+          },
+        );
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => null)) as {
+            error?: { message?: string };
+          } | null;
+          this.cfg.onEvent({
+            type: "error",
+            message: payload?.error?.message ?? "Secure STT audio upload failed",
+            retriable: response.status >= 500 || response.status === 429,
+          });
+        }
+      })
+      .catch(() => {
+        this.cfg.onEvent({
+          type: "error",
+          message: "Secure STT audio upload could not reach the relay",
+          retriable: true,
+        });
+      });
+  }
+
+  private async poll(): Promise<void> {
+    while (!this.closedByUser) {
+      const handle = this.handle;
+      if (!handle) return;
+      try {
+        const response = await fetch(
+          `${this.endpoint}/${encodeURIComponent(handle.id)}?after=${this.lastSequence}`,
+          {
+            headers: this.headers(handle),
+            cache: "no-store",
+          },
+        );
+        const payload = (await response.json()) as RelayPollResponse & {
+          error?: { message?: string };
+        };
+        if (!response.ok) {
+          this.cfg.onEvent({
+            type: "error",
+            message: payload.error?.message ?? "Secure STT event poll failed",
+            retriable: response.status >= 500 || response.status === 429,
+          });
+          if (response.status === 403 || response.status === 404) return;
+        } else {
+          for (const envelope of payload.events ?? []) {
+            this.lastSequence = Math.max(this.lastSequence, envelope.sequence);
+            this.cfg.onEvent(envelope.event);
+          }
+          if (payload.state === "closed" || payload.state === "error") return;
+        }
+      } catch {
+        this.cfg.onEvent({
+          type: "error",
+          message: "Secure STT relay temporarily unreachable",
+          retriable: true,
+        });
+      }
+      await delay(250);
+    }
+  }
+
+  private headers(handle: RelayHandle): Record<string, string> {
+    return { Authorization: `Bearer ${handle.token}` };
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 // ── Mock stream ──────────────────────────────────────────────────────────────

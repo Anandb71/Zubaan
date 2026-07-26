@@ -10,6 +10,13 @@ const config: Config = {
       colors: {
         ink: "var(--ink)",
         "ink-soft": "var(--ink-soft)",
+        "ink-3": "var(--ink-3)",
+        bone: "var(--bone)",
+        dim: "var(--dim)",
+        cy: "var(--cy)",
+        sf: "var(--sf)",
+        red: "var(--red)",
+        ind: "var(--ind)",
         paper: "var(--paper)",
         "paper-muted": "var(--paper-muted)",
         line: "var(--line)",
@@ -18,8 +25,15 @@ const config: Config = {
         saffron: "var(--saffron)",
       },
       fontFamily: {
-        display: ["Bahnschrift", "Aptos Display", "Nirmala UI", "sans-serif"],
-        sans: ["Aptos", "Nirmala UI", "Segoe UI", "sans-serif"],
+        display: [
+          "var(--font-bricolage)",
+          "Bricolage Grotesque",
+          "sans-serif",
+        ],
+        sans: ["var(--font-bricolage)", "Bricolage Grotesque", "sans-serif"],
+        mono: ["var(--font-mono)", "JetBrains Mono", "monospace"],
+        mark: ["var(--font-mark)", "Silkscreen", "monospace"],
+        deva: ["var(--font-deva)", "Noto Sans Devanagari", "serif"],
       },
       keyframes: {
         "signal-in": {
@@ -30,10 +44,15 @@ const config: Config = {
           "0%, 100%": { transform: "scaleY(.25)", opacity: ".45" },
           "50%": { transform: "scaleY(1)", opacity: "1" },
         },
+        rise: {
+          from: { opacity: "0", transform: "translateY(8px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
       },
       animation: {
         "signal-in": "signal-in 240ms cubic-bezier(.2,.8,.2,1) both",
         "level-pulse": "level-pulse 720ms ease-in-out infinite",
+        rise: "rise 400ms ease both",
       },
     },
   },

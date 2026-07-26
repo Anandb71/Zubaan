@@ -9,6 +9,7 @@ import { SupabaseRepositories } from "@/lib/repositories/supabase";
 
 function buildRepositories(): RepositoryBundle {
   if (
+    !config.features.demoMode &&
     config.storage.mode === "supabase" &&
     config.storage.url &&
     config.storage.serviceKey

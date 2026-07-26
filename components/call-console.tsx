@@ -6,8 +6,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DEMO_SCRIPT } from "@/dev/fixtures/zubaan-demo";
 import { languageLabel } from "@/lib/i18n/languages";
 import type { Call, Utterance, Violation } from "@/lib/models";
-import { MockSttStream, SttStream, type LiveSttStream } from "@/lib/sarvam/stt-client";
-import type { SttSession } from "@/lib/sarvam/stt";
+import {
+  MockSttStream,
+  RelaySttStream,
+  type LiveSttStream,
+} from "@/lib/sarvam/stt-client";
 import type { SttEvent } from "@/lib/sarvam/types";
 
 type Phase = "idle" | "listening" | "ending" | "done" | "error";
@@ -235,27 +238,18 @@ export function CallConsole() {
         stream = new MockSttStream(DEMO_SCRIPT, onSttEvent, 1);
         setStatus("Stage mode — scripted Hindi sale playing");
       } else {
-        const sessionRes = await fetch("/api/stt/session");
-        const sessionData = await sessionRes.json();
-        if (!sessionData.session) {
+        const relay = new RelaySttStream({ onEvent: onSttEvent });
+        try {
+          await relay.start();
+          await startMic(relay);
+          setStatus("LIVE SECURE RELAY — speak Hindi/English; key stays server-side");
+          streamRef.current = relay;
+          return;
+        } catch {
+          relay.close();
           stream = new MockSttStream(DEMO_SCRIPT, onSttEvent, 1);
           setMode("stage");
-          setStatus("No live STT key — falling back to stage script");
-        } else {
-          stream = new SttStream({
-            // Fresh URL on every reconnect so long calls don't die on expiry.
-            sessionProvider: async () => {
-              const r = await fetch("/api/stt/session");
-              const j = await r.json();
-              return (j.session as SttSession) ?? null;
-            },
-            onEvent: onSttEvent,
-          });
-          await stream.start();
-          await startMic(stream);
-          setStatus("LIVE — speak Hindi/English lies; red cards under 2s");
-          streamRef.current = stream;
-          return;
+          setStatus("Secure relay unavailable — falling back to stage script");
         }
       }
 
@@ -328,198 +322,233 @@ export function CallConsole() {
   }, [phase, mode, end]);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-saffron">
-              Agent console
-            </p>
-            <h1 className="font-display mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
-              Live call
-            </h1>
-            <p className="mt-2 max-w-xl text-sm text-[var(--text-muted)]">
-              Suraksha Growth Plus · customer audit language: Tamil · spoken: auto-detect
-            </p>
+    <div className="space-y-7">
+      <div className="flex flex-wrap items-baseline gap-4">
+        <span className="font-mark text-[11px] tracking-[0.2em] text-sf">
+          03 — LIVE CONSOLE
+        </span>
+        <h1 className="m-0 font-display text-[clamp(34px,5vw,64px)] font-bold leading-[0.94] tracking-[-0.035em]">
+          The room, on the record.
+        </h1>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="border border-[rgba(239,232,218,0.18)] px-3 py-2 font-mono text-[11px] text-dim">
+          Detected:{" "}
+          <span className="text-bone">
+            {detectedLang === "unknown" ? "—" : languageLabel(detectedLang)}
+          </span>
+        </span>
+        <span
+          className={[
+            "px-3 py-2 font-mark text-[10px] tracking-[0.14em]",
+            liveReady ? "bg-cy/15 text-cy" : "bg-ink-3 text-dim",
+          ].join(" ")}
+        >
+          {liveReady ? "SARVAM LIVE" : "STAGE MODE"}
+        </span>
+        <div className="flex border border-[rgba(239,232,218,0.18)] p-1">
+          <ModeButton
+            active={mode === "stage"}
+            onClick={() => setMode("stage")}
+            disabled={phase === "listening"}
+          >
+            Stage
+          </ModeButton>
+          <ModeButton
+            active={mode === "live"}
+            onClick={() => setMode("live")}
+            disabled={phase === "listening" || !liveReady}
+          >
+            Live mic
+          </ModeButton>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-chrome">
+          <div className="dot-row" aria-hidden>
+            <span className="bg-red" />
+            <span className="bg-sf" />
+            <span className="bg-cy" />
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-md border hairline px-3 py-2 text-xs font-semibold text-[var(--text-muted)]">
-              Detected:{" "}
-              <span className="text-[var(--text)]">
-                {detectedLang === "unknown" ? "—" : languageLabel(detectedLang)}
+          <span className="font-mono text-[11px] tracking-[0.1em] text-dim">
+            zubaan://witness/live · ULIP-2026-A · branch_pune_04
+          </span>
+          <span className="ml-auto font-mark text-[10px] tracking-[0.14em] text-cy">
+            {phase === "listening" ? "REC" : "STANDBY"}
+          </span>
+        </div>
+
+        <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+          <section className="flex flex-col border-b border-[rgba(239,232,218,0.14)] lg:border-b-0 lg:border-r">
+            <div className="flex items-center gap-3 border-b border-[rgba(239,232,218,0.1)] px-4 py-3">
+              <span className="font-mark text-[10px] tracking-[0.16em] text-dim">
+                TRANSCRIPT STREAM
               </span>
-            </span>
-            <span
-              className={[
-                "rounded-md px-3 py-2 text-xs font-bold uppercase tracking-[0.14em]",
-                liveReady ? "bg-safe/20 text-safe" : "bg-ink-soft text-[var(--text-muted)]",
-              ].join(" ")}
-            >
-              {liveReady ? "Sarvam live" : "Offline / stage"}
-            </span>
-            <div className="flex rounded-md border hairline p-1">
-              <ModeButton active={mode === "stage"} onClick={() => setMode("stage")} disabled={phase === "listening"}>
-                Stage
-              </ModeButton>
-              <ModeButton
-                active={mode === "live"}
-                onClick={() => setMode("live")}
-                disabled={phase === "listening" || !liveReady}
-              >
-                Live mic
-              </ModeButton>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border hairline bg-ink-soft/70 p-4 sm:p-5">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-muted)]">
-                Transcript
-              </p>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">{status}</p>
-            </div>
-            {phase === "listening" && (
-              <div className="flex h-8 items-end gap-1" aria-hidden>
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <span
-                    key={i}
-                    className="w-1.5 origin-bottom rounded-full bg-saffron animate-level-pulse"
-                    style={{ height: `${10 + i * 4}px`, animationDelay: `${i * 90}ms` }}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="scrollbar-thin h-[min(52vh,420px)] space-y-3 overflow-y-auto pr-1">
-            {lines.length === 0 && !partial && (
-              <p className="text-sm text-[var(--text-muted)]">
-                Press record. Stage mode sells a policy in Hindi, lies twice, and leaves out free-look.
-              </p>
-            )}
-            {lines.map((line) => (
-              <div key={line.id} className="rounded-xl bg-ink/60 px-3 py-2.5">
-                <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
-                  <span className="tabular">{formatTs(line.tsMs)}</span>
-                  {line.language && <span>{languageLabel(line.language)}</span>}
+              <span className="flex items-center gap-2 font-mono text-[10px] text-cy">
+                <span
+                  className={[
+                    "size-1.5 bg-cy",
+                    phase === "listening" ? "blink" : "",
+                  ].join(" ")}
+                />
+                {phase === "listening" ? "DIARIZING 2 SPEAKERS" : "AWAITING"}
+              </span>
+              {phase === "listening" && (
+                <div className="ml-auto flex h-6 items-end gap-1" aria-hidden>
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <span
+                      key={i}
+                      className="w-1 origin-bottom bg-sf animate-level-pulse"
+                      style={{
+                        height: `${8 + i * 3}px`,
+                        animationDelay: `${i * 90}ms`,
+                      }}
+                    />
+                  ))}
                 </div>
-                <p className="text-[15px] leading-relaxed text-[var(--text)]">{line.text}</p>
-              </div>
-            ))}
-            {partial && (
-              <div className="rounded-xl border border-dashed border-[color-mix(in_oklch,var(--line)_70%,transparent)] px-3 py-2.5 opacity-70">
-                <p className="text-[15px] leading-relaxed">{partial}</p>
-              </div>
-            )}
-            <div ref={transcriptEndRef} />
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-3">
-            {phase === "idle" || phase === "done" || phase === "error" ? (
-              <button
-                type="button"
-                onClick={() => void start()}
-                className="min-h-12 cursor-pointer rounded-xl bg-saffron px-6 text-sm font-bold text-ink transition-transform duration-150 hover:brightness-105 active:scale-[0.98]"
-              >
-                {phase === "done" ? "Run again" : "Start recording"}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void end()}
-                disabled={phase === "ending"}
-                className="min-h-12 cursor-pointer rounded-xl bg-signal px-6 text-sm font-bold text-[var(--text)] transition-transform duration-150 hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
-              >
-                {phase === "ending" ? "Auditing…" : "End call"}
-              </button>
-            )}
-            {auditId && (
-              <Link
-                href={`/audit/${auditId}`}
-                className="inline-flex min-h-12 items-center rounded-xl border hairline px-5 text-sm font-semibold text-[var(--text)] transition-colors hover:bg-ink"
-              >
-                Open customer audit
-              </Link>
-            )}
-          </div>
-          {error && (
-            <p className="mt-3 text-sm font-medium text-signal" role="alert">
-              {error}
-            </p>
-          )}
-          {call && (
-            <p className="mt-3 text-xs text-[var(--text-muted)]">
-              Call {call.id.slice(0, 8)} · disclosures satisfied:{" "}
-              {call.satisfiedDisclosureIds.length}
-            </p>
-          )}
-        </div>
-      </section>
-
-      <section className="space-y-4">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-signal">
-            Check A · contradictions
-          </p>
-          <h2 className="font-display mt-1 text-2xl font-semibold">Live flags</h2>
-          <p className="mt-1 text-sm text-[var(--text-muted)]">
-            Red cards must appear under 2s. You said / Document says / Say instead.
-          </p>
-        </div>
-
-        <div className="space-y-3">
-          {violations.filter((v) => v.kind === "contradiction").length === 0 && (
-            <div className="rounded-2xl border hairline bg-ink-soft/50 px-4 py-8 text-center text-sm text-[var(--text-muted)]">
-              No unsupported claims yet. The first lie lights this panel red.
+              )}
             </div>
-          )}
-          {violations
-            .filter((v) => v.kind === "contradiction")
-            .map((v) => (
-              <article
-                key={v.id}
-                className="signal-card rounded-2xl border border-[color-mix(in_oklch,var(--signal)_55%,transparent)] bg-[color-mix(in_oklch,var(--signal)_14%,var(--ink))] p-4"
-              >
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <span className="rounded-md bg-signal px-2 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--text)]">
-                    {v.severity} contradiction
-                  </span>
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
-                    {v.source}
-                  </span>
-                </div>
-                <FlagRow label="You said" value={v.utterance || v.claimMade || "—"} />
-                <FlagRow label="Document says" value={v.contradictedBy || "—"} />
-                <FlagRow label="Say instead" value={v.suggestedCorrection || "—"} />
-              </article>
-            ))}
-        </div>
 
-        {violations.some((v) => v.kind === "omission") && (
-          <div className="space-y-3 pt-2">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-saffron">
-              Check B · omissions
-            </p>
-            {violations
-              .filter((v) => v.kind === "omission")
-              .map((v) => (
-                <article
-                  key={v.id}
-                  className="signal-card rounded-2xl border hairline bg-ink-soft/70 p-4"
+            <div className="scrollbar-thin min-h-[430px] space-y-3 overflow-y-auto p-4">
+              <p className="font-mono text-[11px] text-dim">{status}</p>
+              {lines.length === 0 && !partial && (
+                <p className="text-sm text-dim">
+                  Press record. Stage mode sells a policy in Hindi, lies twice, and
+                  leaves out free-look.
+                </p>
+              )}
+              {lines.map((line) => (
+                <div
+                  key={line.id}
+                  className="grid animate-rise grid-cols-[72px_minmax(0,1fr)] gap-3"
                 >
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-saffron">
-                    Never stated · {v.disclosureId}
-                  </p>
-                  <p className="mt-2 text-sm leading-relaxed text-[var(--text)]">
-                    {v.contradictedBy}
-                  </p>
-                </article>
+                  <div className="flex flex-col gap-1 font-mono text-[10px] text-dim">
+                    <span className="tabular">{formatTs(line.tsMs)}</span>
+                    {line.language && (
+                      <span className="text-cy">{languageLabel(line.language)}</span>
+                    )}
+                  </div>
+                  <div className="border-l-2 border-cy pl-3">
+                    <p className="text-[16px] leading-relaxed text-bone">{line.text}</p>
+                  </div>
+                </div>
               ))}
-          </div>
-        )}
-      </section>
+              {partial && (
+                <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-3 opacity-70">
+                  <span className="font-mono text-[10px] text-dim">…</span>
+                  <div className="border-l-2 border-dim pl-3">
+                    <p className="text-[16px] leading-relaxed text-bone">{partial}</p>
+                  </div>
+                </div>
+              )}
+              <div ref={transcriptEndRef} />
+            </div>
+
+            <div className="flex flex-wrap gap-3 border-t border-[rgba(239,232,218,0.12)] p-4">
+              {phase === "idle" || phase === "done" || phase === "error" ? (
+                <button
+                  type="button"
+                  onClick={() => void start()}
+                  className="min-h-12 cursor-pointer bg-cy px-6 font-mark text-[11px] tracking-[0.16em] text-ink transition-transform hover:brightness-105 active:scale-[0.98]"
+                >
+                  {phase === "done" ? "RUN AGAIN" : "START RECORDING"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void end()}
+                  disabled={phase === "ending"}
+                  className="min-h-12 cursor-pointer bg-red px-6 font-mark text-[11px] tracking-[0.16em] text-ink transition-transform hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
+                >
+                  {phase === "ending" ? "AUDITING…" : "END CALL"}
+                </button>
+              )}
+              {auditId && (
+                <Link
+                  href={`/audit/${auditId}`}
+                  className="inline-flex min-h-12 items-center border border-[rgba(239,232,218,0.28)] px-5 font-mono text-[11px] uppercase tracking-[0.12em] text-bone transition-colors hover:border-cy hover:text-cy"
+                >
+                  Open customer audit
+                </Link>
+              )}
+              {error && (
+                <p className="w-full text-sm font-medium text-red" role="alert">
+                  {error}
+                </p>
+              )}
+              {call && (
+                <p className="w-full font-mono text-[11px] text-dim">
+                  Call {call.id.slice(0, 8)} · disclosures satisfied:{" "}
+                  {call.satisfiedDisclosureIds.length}
+                </p>
+              )}
+            </div>
+          </section>
+
+          <section className="flex flex-col">
+            <div className="border-b border-[rgba(239,232,218,0.12)] px-4 py-3">
+              <span className="font-mark text-[10px] tracking-[0.16em] text-dim">
+                MIS-SELLING RISK
+              </span>
+              <p className="mt-1 font-mono text-[11px] text-dim">
+                You said / Document says / Say instead — under 2s.
+              </p>
+            </div>
+
+            <div className="space-y-3 p-4">
+              {violations.filter((v) => v.kind === "contradiction").length === 0 && (
+                <div className="border border-[rgba(239,232,218,0.12)] bg-ink px-4 py-10 text-center font-mono text-[12px] text-dim">
+                  awaiting next utterance
+                </div>
+              )}
+              {violations
+                .filter((v) => v.kind === "contradiction")
+                .map((v) => (
+                  <article
+                    key={v.id}
+                    className="signal-card border border-[rgba(255,77,61,0.45)] bg-[rgba(255,77,61,0.1)] p-4"
+                  >
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <span className="bg-red px-2 py-1 font-mark text-[9px] tracking-[0.12em] text-ink">
+                        ▲ {v.severity} contradiction
+                      </span>
+                      <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-dim">
+                        {v.source}
+                      </span>
+                    </div>
+                    <FlagRow
+                      label="You said"
+                      value={v.utterance || v.claimMade || "—"}
+                    />
+                    <FlagRow label="Document says" value={v.contradictedBy || "—"} />
+                    <FlagRow
+                      label="Say instead"
+                      value={v.suggestedCorrection || "—"}
+                    />
+                  </article>
+                ))}
+
+              {violations
+                .filter((v) => v.kind === "omission")
+                .map((v) => (
+                  <article
+                    key={v.id}
+                    className="signal-card border border-[rgba(255,179,71,0.4)] bg-[rgba(255,179,71,0.08)] p-4"
+                  >
+                    <p className="font-mark text-[10px] tracking-[0.14em] text-sf">
+                      NEVER STATED · {v.disclosureId}
+                    </p>
+                    <p className="mt-2 text-sm leading-relaxed text-bone">
+                      {v.contradictedBy}
+                    </p>
+                  </article>
+                ))}
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }
@@ -541,8 +570,8 @@ function ModeButton({
       onClick={onClick}
       disabled={disabled}
       className={[
-        "min-h-9 cursor-pointer rounded-md px-3 text-xs font-semibold transition-colors",
-        active ? "bg-saffron text-ink" : "text-[var(--text-muted)] hover:text-[var(--text)]",
+        "min-h-9 cursor-pointer px-3 font-mono text-[11px] uppercase tracking-[0.12em] transition-colors",
+        active ? "bg-sf text-ink" : "text-dim hover:text-bone",
       ].join(" ")}
     >
       {children}
@@ -553,10 +582,10 @@ function ModeButton({
 function FlagRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="mt-2">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
+      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-dim">
         {label}
       </p>
-      <p className="mt-1 text-sm leading-relaxed text-[var(--text)]">{value}</p>
+      <p className="mt-1 text-sm leading-relaxed text-bone">{value}</p>
     </div>
   );
 }

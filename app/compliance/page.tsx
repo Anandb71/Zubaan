@@ -10,13 +10,13 @@ export default async function CompliancePage() {
     <AppShell>
       <div className="space-y-8">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-saffron">
-            Compliance officer
+          <p className="font-mark text-[11px] tracking-[0.2em] text-sf">
+            05 — WITNESS LEDGER
           </p>
-          <h1 className="font-display mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">
+          <h1 className="font-display mt-2 text-[clamp(28px,4vw,48px)] font-bold leading-[0.95] tracking-[-0.03em]">
             Violation rates
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-[var(--text-muted)]">
+          <p className="mt-3 max-w-2xl text-sm text-dim">
             Evidence-backed risk across agents, languages, and reviewed conversations.
           </p>
         </div>

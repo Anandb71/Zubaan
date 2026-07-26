@@ -1,8 +1,9 @@
 /**
  * Server-side builder for a Saaras v3 streaming session.
  *
- * Browser cannot set WS headers, so the key rides in the query string.
- * Client fetches this URL from /api/stt/session — never from the bundle.
+ * The upstream requires a query-string credential because browser WebSockets
+ * cannot set headers. This URL is server-only and is consumed exclusively by
+ * the same-origin STT relay; it must never be returned to a browser.
  */
 
 import { config } from "@/lib/config";
