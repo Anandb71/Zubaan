@@ -5,10 +5,11 @@ import { endCall } from "@/lib/pipeline/end-call";
 
 export async function POST(
   _req: Request,
-  { params }: { params: { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const result = await endCall(params.id);
+    const { id } = await context.params;
+    const result = await endCall(id);
     return NextResponse.json(result);
   } catch (cause) {
     const error = fromThrown(cause);

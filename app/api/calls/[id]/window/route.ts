@@ -21,17 +21,18 @@ const bodySchema = z.object({
 
 export async function POST(
   req: Request,
-  { params }: { params: { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
+    const { id } = await context.params;
     const json = await req.json();
     const body = bodySchema.parse(json);
     const result = await processWindow({
-      callId: params.id,
+      callId: id,
       utterances: body.utterances,
       detectedLang: body.detectedLang,
     });
-    const call = await store.getCall(params.id);
+    const call = await store.getCall(id);
     return NextResponse.json({ ...result, call });
   } catch (cause) {
     const error = fromThrown(cause);

@@ -2,6 +2,8 @@ import "server-only";
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
+import WebSocket from "ws";
+
 import { buildSttSession } from "@/lib/sarvam/stt";
 import { parseSttMessage } from "@/lib/sarvam/stt-events";
 import type { SttEvent, SttStreamOptions } from "@/lib/sarvam/types";
@@ -46,20 +48,20 @@ class RelaySession {
   private readonly events: RelayEventEnvelope[] = [];
 
   constructor(private readonly socket: WebSocket) {
-    socket.onmessage = (message) => {
-      const text = messageText(message.data);
+    socket.on("message", (data) => {
+      const text = messageText(data);
       for (const event of parseSttMessage(text)) this.push(event);
-    };
-    socket.onerror = () => {
+    });
+    socket.on("error", () => {
       this.state = "error";
       this.terminalAt = Date.now();
       this.push({ type: "error", message: "STT relay upstream error", retriable: true });
-    };
-    socket.onclose = (event) => {
+    });
+    socket.on("close", (code) => {
       this.state = this.state === "error" ? "error" : "closed";
       this.terminalAt ??= Date.now();
-      this.push({ type: "close", code: event.code });
-    };
+      this.push({ type: "close", code });
+    });
   }
 
   markOpen(): void {
@@ -159,7 +161,11 @@ class SttRelayManager {
 
     this.opening += 1;
     try {
-      const socket = new WebSocket(upstream.value.url);
+      const socket = new WebSocket(upstream.value.url, {
+        headers: {
+          "api-subscription-key": upstream.value.apiKey,
+        },
+      });
       const session = new RelaySession(socket);
       const opened = await waitForOpen(socket);
       if (!opened.ok) {
@@ -247,33 +253,49 @@ class SttRelayManager {
 }
 
 async function waitForOpen(socket: WebSocket): Promise<Result<void>> {
+  if (socket.readyState === WebSocket.OPEN) return ok(undefined);
   return new Promise((resolve) => {
     let settled = false;
     const finish = (result: Result<void>) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      socket.off("open", onOpen);
+      socket.off("error", onError);
+      socket.off("close", onClose);
       resolve(result);
     };
+    const onOpen = () => finish(ok(undefined));
+    const onError = () =>
+      finish(err(Errors.upstream("Upstream STT socket failed to open")));
+    const onClose = (code: number) =>
+      finish(
+        err(
+          Errors.upstream(`Upstream STT socket closed before open (${code})`),
+        ),
+      );
     const timer = setTimeout(
       () => finish(err(Errors.timeout("Timed out opening upstream STT socket"))),
       OPEN_TIMEOUT_MS,
     );
-    socket.onopen = () => finish(ok(undefined));
-    const priorError = socket.onerror;
-    socket.onerror = (event) => {
-      priorError?.call(socket, event);
-      finish(err(Errors.upstream("Upstream STT socket failed to open")));
-    };
+    socket.once("open", onOpen);
+    socket.once("error", onError);
+    socket.once("close", onClose);
   });
 }
 
 function messageText(data: unknown): string | undefined {
   if (typeof data === "string") return data;
+  if (Buffer.isBuffer(data)) return data.toString("utf8");
   if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
   if (ArrayBuffer.isView(data)) {
     return new TextDecoder().decode(
       new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
+    );
+  }
+  if (Array.isArray(data)) {
+    return Buffer.concat(data.map((part) => Buffer.from(part as Uint8Array))).toString(
+      "utf8",
     );
   }
   return undefined;

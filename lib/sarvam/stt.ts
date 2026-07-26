@@ -1,9 +1,9 @@
 /**
  * Server-side builder for a Saaras v3 streaming session.
  *
- * The upstream requires a query-string credential because browser WebSockets
- * cannot set headers. This URL is server-only and is consumed exclusively by
- * the same-origin STT relay; it must never be returned to a browser.
+ * Upstream auth is the `api-subscription-key` header on the WebSocket upgrade.
+ * Query-string credentials are rejected (403). The secure relay holds the key
+ * server-side; browsers never receive this URL or credential.
  */
 
 import { config } from "@/lib/config";
@@ -11,7 +11,10 @@ import { Errors, Result, err, ok } from "@/lib/kernel";
 import { SttStreamOptions } from "./types";
 
 export interface SttSession {
+  /** Upstream WebSocket URL without credentials. */
   url: string;
+  /** Header value for api-subscription-key. Never return to the browser. */
+  apiKey: string;
   model: string;
   mode: string;
   expiresAt: number;
@@ -23,15 +26,12 @@ export function buildSttSession(opts: SttStreamOptions = {}): Result<SttSession>
   }
 
   const mode = opts.mode ?? "codemix";
-  // Official AsyncAPI uses hyphenated `language-code` and connection-level
-  // sample_rate + input_audio_codec for raw PCM mic streams.
+  // Official AsyncAPI uses hyphenated `language-code`. Keep sample_rate /
+  // codec optional — WAV-framed chunks work without connection-level PCM.
   const params = new URLSearchParams({
     model: config.sarvam.models.stt,
-    "api-subscription-key": config.sarvam.apiKey,
     "language-code": opts.languageCode ?? "unknown",
     mode,
-    sample_rate: "16000",
-    input_audio_codec: "pcm_s16le",
     high_vad_sensitivity: String(opts.highVadSensitivity ?? true),
     vad_signals: String(opts.vadSignals ?? true),
     flush_signal: "true",
@@ -39,6 +39,7 @@ export function buildSttSession(opts: SttStreamOptions = {}): Result<SttSession>
 
   return ok({
     url: `${config.sarvam.sttWsUrl}?${params.toString()}`,
+    apiKey: config.sarvam.apiKey,
     model: config.sarvam.models.stt,
     mode,
     expiresAt: Date.now() + 50 * 60 * 1000,

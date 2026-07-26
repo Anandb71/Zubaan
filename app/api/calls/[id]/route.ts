@@ -5,17 +5,18 @@ import { store } from "@/lib/store";
 
 export async function GET(
   _req: Request,
-  { params }: { params: { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const call = await store.getCall(params.id);
+    const { id } = await context.params;
+    const call = await store.getCall(id);
     if (!call) {
       return NextResponse.json(
         { error: { kind: "not_found", message: "call not found" } },
         { status: 404 },
       );
     }
-    const violations = await store.listViolations(params.id);
+    const violations = await store.listViolations(id);
     return NextResponse.json({ call, violations });
   } catch (cause) {
     const error = fromThrown(cause);

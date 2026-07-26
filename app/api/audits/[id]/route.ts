@@ -5,10 +5,11 @@ import { store } from "@/lib/store";
 
 export async function GET(
   _req: Request,
-  { params }: { params: { id: string } },
+  context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const audit = await store.getAudit(params.id);
+    const { id } = await context.params;
+    const audit = await store.getAudit(id);
     if (!audit) {
       return NextResponse.json(
         { error: { kind: "not_found", message: "audit not found" } },
