@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --ink: oklch(0.16 0.018 238);
+  --ink-soft: oklch(0.22 0.021 238);
+  --paper: oklch(0.97 0.014 82);
+  --paper-muted: oklch(0.91 0.017 82);
+  --line: oklch(0.38 0.02 238);
+  --signal: oklch(0.64 0.215 27);
+  --safe: oklch(0.7 0.145 153);
+  --saffron: oklch(0.78 0.15 76);
+  --text: oklch(0.95 0.008 82);
+  --text-muted: oklch(0.73 0.018 238);
+  --focus: oklch(0.83 0.14 76);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--ink);
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100dvh;
+  margin: 0;
+  background: var(--ink);
+  color: var(--text);
+  font-family: Aptos, "Nirmala UI", "Segoe UI", sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--saffron) 70%, transparent);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.font-display {
+  font-family: Bahnschrift, "Aptos Display", "Nirmala UI", sans-serif;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.paper-surface {
+  color-scheme: light;
+  background: var(--paper);
+  color: oklch(0.2 0.018 238);
+}
+
+.noise-field {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.045'/%3E%3C/svg%3E");
+}
+
+.hairline {
+  border-color: color-mix(in oklch, var(--line) 74%, transparent);
+}
+
+.signal-card {
+  animation: signal-in 240ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.scrollbar-thin {
+  scrollbar-color: color-mix(in oklch, var(--line) 84%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
