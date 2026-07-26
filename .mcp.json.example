@@ -1,0 +1,12 @@
+{
+  "//": "Copy to .mcp.json (gitignored) and paste your key. Requires `uv` installed so `uvx` is on PATH: https://docs.astral.sh/uv/",
+  "mcpServers": {
+    "sarvam": {
+      "command": "uvx",
+      "args": ["sarvam-mcp"],
+      "env": {
+        "SARVAM_API_KEY": "<YOUR_SARVAM_API_KEY>"
+      }
+    }
+  }
+}
