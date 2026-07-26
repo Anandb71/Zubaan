@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
-const nav = [
+const productNav = [
   { href: "/call", label: "Live" },
   { href: "/inbox", label: "Inbox" },
   { href: "/import", label: "Import" },
@@ -12,14 +12,23 @@ const nav = [
   { href: "/product", label: "Sources" },
 ];
 
+const landingNav = [
+  { href: "#witness", label: "Witness" },
+  { href: "#duet", label: "Two mouths" },
+  { href: "#console", label: "Live console" },
+];
+
 export function AppShell({
   children,
   bare = false,
+  landing = false,
 }: {
   children: ReactNode;
   bare?: boolean;
+  landing?: boolean;
 }) {
   const pathname = usePathname();
+  const nav = landing ? landingNav : productNav;
 
   return (
     <div className="noise-field min-h-dvh">
@@ -45,7 +54,8 @@ export function AppShell({
           >
             {nav.map((item) => {
               const active =
-                pathname === item.href || pathname.startsWith(`${item.href}/`);
+                !landing &&
+                (pathname === item.href || pathname.startsWith(`${item.href}/`));
               return (
                 <Link
                   key={item.href}
@@ -61,6 +71,14 @@ export function AppShell({
                 </Link>
               );
             })}
+            {landing ? (
+              <Link
+                href="/call"
+                className="text-cy transition-colors hover:text-bone"
+              >
+                Enter app
+              </Link>
+            ) : null}
             <span className="rec-pill" aria-hidden>
               <i />
               REC
@@ -87,30 +105,32 @@ export function AppShell({
         {children}
       </main>
 
-      <nav
-        className="fixed inset-x-0 bottom-0 z-50 border-t border-[rgba(239,232,218,0.12)] bg-ink/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:hidden"
-        aria-label="Mobile navigation"
-      >
-        <div className="grid grid-cols-5">
-          {nav.map((item) => {
-            const active =
-              pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? "page" : undefined}
-                className={[
-                  "flex min-h-14 flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase tracking-[0.12em]",
-                  active ? "text-cy" : "text-dim",
-                ].join(" ")}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
+      {!landing ? (
+        <nav
+          className="fixed inset-x-0 bottom-0 z-50 border-t border-[rgba(239,232,218,0.12)] bg-ink/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:hidden"
+          aria-label="Mobile navigation"
+        >
+          <div className="grid grid-cols-5">
+            {productNav.map((item) => {
+              const active =
+                pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={[
+                    "flex min-h-14 flex-col items-center justify-center gap-1 font-mono text-[10px] uppercase tracking-[0.12em]",
+                    active ? "text-cy" : "text-dim",
+                  ].join(" ")}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
+      ) : null}
     </div>
   );
 }

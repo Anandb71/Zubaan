@@ -2,7 +2,9 @@ import type { Metadata, Viewport } from "next";
 import {
   Bricolage_Grotesque,
   JetBrains_Mono,
+  Noto_Sans_Bengali,
   Noto_Sans_Devanagari,
+  Noto_Sans_Tamil,
   Silkscreen,
 } from "next/font/google";
 
@@ -33,6 +35,18 @@ const deva = Noto_Sans_Devanagari({
   display: "swap",
 });
 
+const tamil = Noto_Sans_Tamil({
+  subsets: ["tamil"],
+  variable: "--font-tamil",
+  display: "swap",
+});
+
+const bengali = Noto_Sans_Bengali({
+  subsets: ["bengali"],
+  variable: "--font-bengali",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: {
     default: "Zubaan · Vernacular compliance witness",
@@ -56,7 +70,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${bricolage.variable} ${mono.variable} ${mark.variable} ${deva.variable}`}
+      className={`${bricolage.variable} ${mono.variable} ${mark.variable} ${deva.variable} ${tamil.variable} ${bengali.variable}`}
     >
       <body>
         <a
