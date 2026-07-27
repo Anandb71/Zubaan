@@ -117,9 +117,6 @@ async function withDeadline<T>(
         err(Errors.timeout(`${label} exceeded ${ms}ms`, { context: { label, ms } })),
       );
     }, ms);
-    if (timer && typeof timer === "object" && "unref" in timer) {
-      (timer as unknown as { unref: () => void }).unref();
-    }
   });
 
   try {
